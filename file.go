@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/gobwas/glob"
 	"os"
 	"path/filepath"
@@ -34,9 +33,10 @@ func (f *File) Path() string {
 type Files []*File
 
 func (fs Files) FindByName(n string) *File {
-	return fs[0]
 	for _, f := range fs {
-		fmt.Println("name is", f.File.Name())
+		if n == f.Name() {
+			return f
+		}
 	}
 	return nil
 }

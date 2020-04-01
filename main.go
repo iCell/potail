@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"log"
-	"net/http"
 	"sync"
 )
 
@@ -22,50 +21,44 @@ func main() {
 
 	defer watcher.Close()
 
-	files, err := FilesFromDir(".")
+	files, err := FilesFromDir(".", "*test*")
 	if err != nil {
 		panic(err)
 	}
 
-	err = watcher.Add(".")
-	if err != nil {
-		panic(err)
-	}
+	//err = watcher.Add(".")
+	//if err != nil {
+	//	panic(err)
+	//}
 	for _, f := range files {
-		err = watcher.Add(f.File.Name())
+		err = watcher.Add(f.Path())
 		if err != nil {
 			panic(err)
 		}
+
+		t := NewTail(f)
+		go t.Tail()
 	}
 
-	t := NewTail(files[0])
-
-	go t.Tail()
-
-	go func() {
-		for {
-			select {
-			case event := <-watcher.Events:
-				switch {
-				case event.Op&fsnotify.Create == fsnotify.Create:
-					fmt.Println("create")
-					fmt.Println(event.Name)
-				case event.Op&fsnotify.Write == fsnotify.Write:
-					fmt.Println("write")
-					destFile := files.FindByName(event.Name)
-					if destFile != nil && destFile.Follow {
-						destFile.Modify <- true
-					}
-				case event.Op&fsnotify.Remove == fsnotify.Remove:
-					fallthrough
-				case event.Op&fsnotify.Rename == fsnotify.Rename:
-					fmt.Println("rename")
+	for {
+		select {
+		case event := <-watcher.Events:
+			switch {
+			case event.Op&fsnotify.Create == fsnotify.Create:
+				fmt.Println("create")
+			case event.Op&fsnotify.Write == fsnotify.Write:
+				fmt.Println("write")
+				destFile := files.FindByName(event.Name)
+				if destFile != nil && destFile.Follow {
+					destFile.Modify <- true
 				}
-			case err := <-watcher.Errors:
-				fmt.Println(err)
+			case event.Op&fsnotify.Remove == fsnotify.Remove:
+				fmt.Println("remove")
+			case event.Op&fsnotify.Rename == fsnotify.Rename:
+				fmt.Println("rename")
 			}
+		case err := <-watcher.Errors:
+			fmt.Println(err)
 		}
-	}()
-
-	http.ListenAndServe(":8080", nil)
+	}
 }
