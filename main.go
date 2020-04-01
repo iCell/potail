@@ -2,40 +2,11 @@ package main
 
 import (
 	"fmt"
+	"github.com/fsnotify/fsnotify"
 	"log"
 	"net/http"
-	"os"
 	"sync"
-
-	"github.com/fsnotify/fsnotify"
 )
-
-type File struct {
-	File   *os.File
-	Modify chan bool
-}
-
-func (f *File) Name() string {
-	return "test"
-}
-
-type Files []*File
-
-func (fs Files) FindByName(n string) *File {
-	return fs[0]
-	for _, f := range fs {
-		fmt.Println("name is", f.File.Name())
-	}
-	return nil
-}
-
-func FilesFromDir(dir string) (Files, error) {
-	f, err := os.Open("./test")
-	if err != nil {
-		return nil, err
-	}
-	return Files{&File{File: f, Modify: make(chan bool)}}, nil
-}
 
 var watcher *fsnotify.Watcher
 var once sync.Once
@@ -48,13 +19,18 @@ func main() {
 		}
 		watcher = wt
 	})
+
 	defer watcher.Close()
 
-	files, err := FilesFromDir("")
+	files, err := FilesFromDir(".")
 	if err != nil {
 		panic(err)
 	}
 
+	err = watcher.Add(".")
+	if err != nil {
+		panic(err)
+	}
 	for _, f := range files {
 		err = watcher.Add(f.File.Name())
 		if err != nil {
@@ -71,14 +47,17 @@ func main() {
 			select {
 			case event := <-watcher.Events:
 				switch {
+				case event.Op&fsnotify.Create == fsnotify.Create:
+					fmt.Println("create")
+					fmt.Println(event.Name)
 				case event.Op&fsnotify.Write == fsnotify.Write:
 					fmt.Println("write")
 					destFile := files.FindByName(event.Name)
-					if destFile != nil {
+					if destFile != nil && destFile.Follow {
 						destFile.Modify <- true
 					}
 				case event.Op&fsnotify.Remove == fsnotify.Remove:
-					fmt.Println("remove")
+					fallthrough
 				case event.Op&fsnotify.Rename == fsnotify.Rename:
 					fmt.Println("rename")
 				}

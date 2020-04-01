@@ -8,16 +8,6 @@ import (
 	"sync"
 )
 
-const newLine = '\n'
-
-type Line struct {
-	Text string
-}
-
-func (line *Line) IsEmpty() bool {
-	return len(line.Text) == 0
-}
-
 type Tail struct {
 	sync.Mutex
 	file   *File
@@ -69,6 +59,8 @@ func (t *Tail) Tail() {
 
 			pos, _ := t.file.File.Seek(0, io.SeekCurrent)
 			fmt.Println("current position", pos)
+
+			t.file.Follow = true
 
 			isContinue := false
 			for _ = range t.file.Modify {
