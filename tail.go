@@ -57,14 +57,12 @@ func (t *Tail) Tail() {
 		case err == io.EOF:
 			t.sendLine(line)
 
-			pos, _ := t.file.File.Seek(0, io.SeekCurrent)
-			fmt.Println("current position", pos)
+			//pos, _ := t.file.File.Seek(0, io.SeekCurrent)
 
 			t.file.Follow = true
 
 			isContinue := false
 			for _ = range t.file.Modify {
-				fmt.Println("received modify notification")
 				isContinue = true
 				break
 			}

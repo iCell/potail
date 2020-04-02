@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gobwas/glob"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -49,29 +50,30 @@ func (fs Files) RemoveByName(n string) {
 
 func FilesFromDir(dir string, pattern string) (Files, error) {
 	var fs Files
+
 	g := glob.MustCompile(pattern)
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() == false {
-			base := filepath.Base(path)
-			if g.Match(base) {
-				f, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-				fs = append(fs, &File{
-					File:   f,
-					Modify: make(chan bool),
-				})
-			}
-		}
-		return nil
-	})
+	fis, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
+	}
+	for _, fi := range fis {
+		if fi.IsDir() {
+			continue
+		}
+
+		n := fi.Name()
+		if g.Match(n) {
+			p := filepath.Join(dir, n)
+			f, err := os.Open(p)
+			if err != nil {
+				return nil, err
+			}
+			fs = append(fs, &File{
+				File:   f,
+				Modify: make(chan bool),
+			})
+		}
 	}
 
 	return fs, nil
