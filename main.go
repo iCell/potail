@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/fsnotify/fsnotify"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,6 +14,16 @@ var watcher *fsnotify.Watcher
 var once sync.Once
 
 func main() {
+	fs, err := NewFromDir(".")
+	if err != nil {
+		panic(err)
+	}
+
+	fs.Watch()
+	http.ListenAndServe(":8080", nil)
+}
+
+func run() {
 	once.Do(func() {
 		wt, err := fsnotify.NewWatcher()
 		if err != nil {
@@ -30,10 +41,6 @@ func main() {
 		panic(err)
 	}
 
-	err = watcher.Add(".")
-	if err != nil {
-		panic(err)
-	}
 	for _, f := range files {
 		err = watcher.Add(f.Path())
 		if err != nil {
@@ -71,7 +78,7 @@ func main() {
 			case event.Op&fsnotify.Remove == fsnotify.Remove:
 				fmt.Println("remove", event.Name)
 			case event.Op&fsnotify.Rename == fsnotify.Rename:
-				fmt.Println("rename")
+				fmt.Println("rename", event.Name)
 			}
 		case err := <-watcher.Errors:
 			panic(err)
