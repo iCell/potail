@@ -1,64 +1,109 @@
 package main
 
 import (
-	"fmt"
+	"github.com/fsnotify/fsnotify"
+	"github.com/gobwas/glob"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
 
-type Event int
+type Event struct {
+	Op   Operation
+	File string
+}
+
+type Operation int
 
 const (
-	Create Event = iota
+	Create Operation = iota
 	Rename
 	Remove
 	Chmod
 	Modify
 )
 
-type FS struct {
+type Watcher struct {
 	sync.Mutex
-	Dir   string
-	Files map[string]os.FileInfo
+	inotify      *fsnotify.Watcher
+	files        map[string]os.FileInfo
+	watchedFiles map[string]os.FileInfo
+	Dir          string
+	Event        chan Event
+	Error        chan error
 }
 
-func NewFromDir(dir string) (*FS, error) {
+func NewWatcher(dir, pattern string) (*Watcher, error) {
+	g, err := glob.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+
 	fis, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 
-	i := make(map[string]os.FileInfo)
+	fs := make(map[string]os.FileInfo)
+	wfs := make(map[string]os.FileInfo)
 	for _, fi := range fis {
-		i[fi.Name()] = fi
+		fs[fi.Name()] = fi
+		if g.Match(fi.Name()) {
+			wfs[fi.Name()] = fi
+		}
 	}
 
-	return &FS{
-		Dir:   dir,
-		Files: i,
+	ionotify, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+	for _, wf := range wfs {
+		// todo: support recursive directory
+		if wf.IsDir() {
+			continue
+		}
+		ionotify.Add(filepath.Join(dir, wf.Name()))
+	}
+
+	return &Watcher{
+		files:        fs,
+		watchedFiles: wfs,
+		inotify:      ionotify,
+		Dir:          dir,
+		Event:        make(chan Event),
 	}, nil
 }
 
-func (fs *FS) Watch() {
+func (w *Watcher) Watch() {
 	ticker := time.NewTicker(time.Millisecond * 250)
 	for {
 		select {
 		case <-ticker.C:
-			fs.pollDirEvents()
+			w.pollDirEvents()
+		case e := <-w.inotify.Events:
+			if e.Op&fsnotify.Write == fsnotify.Write {
+				w.Event <- Event{
+					Op:   Modify,
+					File: e.Name,
+				}
+			}
+		case err := <-w.Error:
+			w.Error <- err
 		}
 	}
 }
 
-func (fs *FS) pollDirEvents() error {
-	fs.Lock()
-	defer fs.Unlock()
+func (w *Watcher) pollDirEvents() {
+	w.Lock()
+	defer w.Unlock()
 
 	current := make(map[string]os.FileInfo)
-	fis, err := ioutil.ReadDir(fs.Dir)
+	fis, err := ioutil.ReadDir(w.Dir)
 	if err != nil {
-		return err
+		w.Error <- err
+		return
 	}
 	for _, fi := range fis {
 		current[fi.Name()] = fi
@@ -68,42 +113,50 @@ func (fs *FS) pollDirEvents() error {
 	removes := make(map[string]os.FileInfo)
 
 	// check for removed files
-	for name, info := range fs.Files {
+	for name, info := range w.files {
 		if _, found := current[name]; !found {
 			removes[name] = info
-			delete(fs.Files, name)
-			fmt.Println("remove", name, time.Now().Unix())
+			delete(w.files, name)
+			w.Event <- Event{
+				Op:   Remove,
+				File: name,
+			}
 		}
 	}
 
 	// check for created files
 	for name, info := range current {
-		old, found := fs.Files[name]
+		old, found := w.files[name]
 		if !found {
 			creates[name] = info
-			fs.Files[name] = info
-			fmt.Println("create", info.Name(), time.Now().Unix())
+			w.files[name] = info
+			w.Event <- Event{
+				Op:   Create,
+				File: name,
+			}
 			continue
 		}
 		if old.Mode() != info.Mode() {
-			// event chmod
-			delete(fs.Files, name)
-			fs.Files[name] = info
-			fmt.Println("chmod", info.Name())
+			delete(w.files, name)
+			w.files[name] = info
+			w.Event <- Event{
+				Op:   Chmod,
+				File: name,
+			}
 		}
 	}
 
 	for name1, info1 := range removes {
 		for name2, info2 := range creates {
 			if os.SameFile(info1, info2) {
-				// event rename
-				fmt.Printf("rename from %s to %s", info1.Name(), info2.Name())
+				w.Event <- Event{
+					Op:   Rename,
+					File: name1,
+				}
 
 				delete(removes, name1)
 				delete(creates, name2)
 			}
 		}
 	}
-
-	return nil
 }
