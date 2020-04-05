@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -18,25 +20,56 @@ func (line *Line) IsEmpty() bool {
 	return len(line.Text) == 0
 }
 
-type Tail struct {
+type Tails struct {
 	sync.Mutex
-	file   *File
-	reader *bufio.Reader
+	tails []*Tail
 }
 
-func NewTail(f *File) *Tail {
+func (ts *Tails) Add(path string) (*Tail, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	tail := NewTail(f)
+	ts.Lock()
+	ts.tails = append(ts.tails, tail)
+	ts.Unlock()
+
+	return tail, nil
+}
+
+func (ts *Tails) DestTail(name string) *Tail {
+	for _, t := range ts.tails {
+		if filepath.Base(t.file.Name()) == name {
+			return t
+		}
+	}
+	return nil
+}
+
+type Tail struct {
+	sync.Mutex
+	file       *os.File
+	reader     *bufio.Reader
+	isFollowed bool
+	Modify     chan struct{}
+}
+
+func NewTail(f *os.File) *Tail {
 	return &Tail{
 		file:   f,
-		reader: bufio.NewReader(f.File),
+		reader: bufio.NewReader(f),
+		Modify: make(chan struct{}),
 	}
 }
 
 func (t *Tail) SeekToEnd() {
-	t.file.File.Seek(0, io.SeekEnd)
+	t.file.Seek(0, io.SeekEnd)
 }
 
 func (t *Tail) Close() {
-	t.file.File.Close()
+	t.file.Close()
 }
 
 func (t *Tail) readLine() (*Line, error) {
@@ -59,7 +92,10 @@ func (t *Tail) sendLine(line *Line) {
 }
 
 func (t *Tail) Tail() {
-	defer t.Close()
+	defer func() {
+		t.Close()
+		fmt.Println("close tail")
+	}()
 
 	for {
 		line, err := t.readLine()
@@ -67,17 +103,15 @@ func (t *Tail) Tail() {
 		case err == io.EOF:
 			t.sendLine(line)
 
-			//pos, _ := t.file.File.Seek(0, io.SeekCurrent)
+			t.isFollowed = true
 
-			t.file.Follow = true
-
-			isContinue := false
-			for _ = range t.file.Modify {
-				isContinue = true
+			next := false
+			for _ = range t.Modify {
+				next = true
 				break
 			}
 
-			if isContinue {
+			if next {
 				continue
 			}
 

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"sync"
 )
@@ -12,24 +11,27 @@ var watcher *Watcher
 var once sync.Once
 
 func main() {
-
+	run()
 }
 
 func run() {
 	once.Do(func() {
-		w, err := NewWatcher(".", "test")
+		w, err := NewWatcher(".", "test*")
 		if err != nil {
 			log.Fatal("create watcher failed", err)
 		}
 		watcher = w
 	})
 
-	for _, fi := range watcher.watchedFiles {
-		f, err := os.Open(filepath.Join(watcher.Dir, fi.Name()))
-		if err != nil {
-			log.Fatal("open file err", err)
+	tails := &Tails{}
+	for _, file := range watcher.files {
+		if file.IsWatched == false {
+			continue
 		}
-		t := NewTail(f)
+		t, err := tails.Add(filepath.Join(watcher.Dir, file.Info.Name()))
+		if err != nil {
+			log.Fatal("create tail err", err)
+		}
 		go t.Tail()
 	}
 
@@ -40,21 +42,23 @@ func run() {
 				switch e.Op {
 				case Create:
 					fmt.Println("create", e.File)
-					f, err := os.Open(filepath.Join(watcher.Dir, e.Name))
+					t, err := tails.Add(filepath.Join(watcher.Dir, e.File))
 					if err != nil {
 						panic(err)
 					}
-					// todo: should use lock
-					t := NewTail(f)
 					go t.Tail()
 				case Modify:
-					fmt.Print("modify", e.File)
-				case Rename:
-					fmt.Print("rename", e.File)
-				case Remove:
-					fmt.Print("remove", e.File)
+					fmt.Println("modify", e.File)
+					destTail := tails.DestTail(e.File)
+					if destTail != nil {
+						destTail.Modify <- struct{}{}
+					}
 				case Chmod:
-					fmt.Print("change mod", e.File)
+					fmt.Println("change mod", e.File)
+				case Rename:
+					fmt.Println("rename", e.File)
+				case Remove:
+					fmt.Println("remove", e.File)
 				}
 			case err := <-watcher.Error:
 				panic(err)
@@ -62,8 +66,5 @@ func run() {
 		}
 	}()
 
-	//destFile := files.FindByName(event.Name)
-	//if destFile != nil && destFile.Follow {
-	//	destFile.Modify <- true
-	//}
+	watcher.Watch()
 }
