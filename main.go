@@ -2,86 +2,68 @@ package main
 
 import (
 	"fmt"
-	"github.com/fsnotify/fsnotify"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 )
 
-var watcher *fsnotify.Watcher
+var watcher *Watcher
 var once sync.Once
 
 func main() {
-	fs, err := NewFromDir(".")
-	if err != nil {
-		panic(err)
-	}
 
-	fs.Watch()
-	http.ListenAndServe(":8080", nil)
 }
 
 func run() {
 	once.Do(func() {
-		wt, err := fsnotify.NewWatcher()
+		w, err := NewWatcher(".", "test")
 		if err != nil {
 			log.Fatal("create watcher failed", err)
 		}
-		watcher = wt
+		watcher = w
 	})
 
-	defer watcher.Close()
-
-	dir := "."
-
-	files, err := FilesFromDir(dir, "*test*")
-	if err != nil {
-		panic(err)
-	}
-
-	for _, f := range files {
-		err = watcher.Add(f.Path())
+	for _, fi := range watcher.watchedFiles {
+		f, err := os.Open(filepath.Join(watcher.Dir, fi.Name()))
 		if err != nil {
-			panic(err)
+			log.Fatal("open file err", err)
 		}
-
 		t := NewTail(f)
 		go t.Tail()
 	}
 
-	for {
-		select {
-		case event := <-watcher.Events:
-			switch {
-			case event.Op&fsnotify.Create == fsnotify.Create:
-				fmt.Println("create", event.Name, event.String())
-				f, err := os.Open(filepath.Join(dir, event.Name))
-				if err != nil {
-					panic(err)
+	go func() {
+		for {
+			select {
+			case e := <-watcher.Event:
+				switch e.Op {
+				case Create:
+					fmt.Println("create", e.File)
+					f, err := os.Open(filepath.Join(watcher.Dir, e.Name))
+					if err != nil {
+						panic(err)
+					}
+					// todo: should use lock
+					t := NewTail(f)
+					go t.Tail()
+				case Modify:
+					fmt.Print("modify", e.File)
+				case Rename:
+					fmt.Print("rename", e.File)
+				case Remove:
+					fmt.Print("remove", e.File)
+				case Chmod:
+					fmt.Print("change mod", e.File)
 				}
-				// todo: should use lock
-				file := &File{
-					File:   f,
-					Modify: make(chan bool),
-				}
-				files = append(files, file)
-				t := NewTail(file)
-				go t.Tail()
-			case event.Op&fsnotify.Write == fsnotify.Write:
-				fmt.Println("write")
-				destFile := files.FindByName(event.Name)
-				if destFile != nil && destFile.Follow {
-					destFile.Modify <- true
-				}
-			case event.Op&fsnotify.Remove == fsnotify.Remove:
-				fmt.Println("remove", event.Name)
-			case event.Op&fsnotify.Rename == fsnotify.Rename:
-				fmt.Println("rename", event.Name)
+			case err := <-watcher.Error:
+				panic(err)
 			}
-		case err := <-watcher.Errors:
-			panic(err)
 		}
-	}
+	}()
+
+	//destFile := files.FindByName(event.Name)
+	//if destFile != nil && destFile.Follow {
+	//	destFile.Modify <- true
+	//}
 }

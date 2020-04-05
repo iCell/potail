@@ -27,6 +27,7 @@ const (
 
 type Watcher struct {
 	sync.Mutex
+	filter       glob.Glob
 	inotify      *fsnotify.Watcher
 	files        map[string]os.FileInfo
 	watchedFiles map[string]os.FileInfo
@@ -70,18 +71,24 @@ func NewWatcher(dir, pattern string) (*Watcher, error) {
 	return &Watcher{
 		files:        fs,
 		watchedFiles: wfs,
+		filter:       g,
 		inotify:      ionotify,
 		Dir:          dir,
 		Event:        make(chan Event),
+		Error:        make(chan error),
+		Cancel:       make(chan struct{}),
 	}, nil
 }
 
 func (w *Watcher) Watch() {
-	ticker := time.NewTicker(time.Millisecond * 250)
+	duration := time.Millisecond * 250
+	timer := time.NewTimer(duration)
+
 	for {
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			w.pollDirEvents()
+			timer.Reset(duration)
 		case e := <-w.inotify.Events:
 			if e.Op&fsnotify.Write == fsnotify.Write {
 				w.Event <- Event{

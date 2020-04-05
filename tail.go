@@ -8,6 +8,16 @@ import (
 	"sync"
 )
 
+const newLine = '\n'
+
+type Line struct {
+	Text string
+}
+
+func (line *Line) IsEmpty() bool {
+	return len(line.Text) == 0
+}
+
 type Tail struct {
 	sync.Mutex
 	file   *File
