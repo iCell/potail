@@ -22,7 +22,13 @@ func (line *Line) IsEmpty() bool {
 
 type Tails struct {
 	sync.Mutex
-	tails []*Tail
+	tails map[string]*Tail
+}
+
+func NewTails() *Tails {
+	return &Tails{
+		tails: make(map[string]*Tail),
+	}
 }
 
 func (ts *Tails) Add(path string) (*Tail, error) {
@@ -33,7 +39,7 @@ func (ts *Tails) Add(path string) (*Tail, error) {
 
 	tail := NewTail(f)
 	ts.Lock()
-	ts.tails = append(ts.tails, tail)
+	ts.tails[filepath.Base(f.Name())] = tail
 	ts.Unlock()
 
 	return tail, nil
@@ -44,7 +50,7 @@ func (ts *Tails) NotifyTail(name string) {
 	if destTail == nil {
 		return
 	}
-	destTail.Modify <- struct{}{}
+	destTail.modify <- struct{}{}
 }
 
 func (ts *Tails) CloseTail(name string) {
@@ -52,12 +58,17 @@ func (ts *Tails) CloseTail(name string) {
 	if destTail == nil {
 		return
 	}
-	close(destTail.Modify)
+	close(destTail.modify)
+	ts.Lock()
+	delete(ts.tails, filepath.Base(destTail.file.Name()))
+	ts.Unlock()
 }
 
 func (ts *Tails) destTail(name string) *Tail {
-	for _, t := range ts.tails {
-		if filepath.Base(t.file.Name()) == name {
+	ts.Lock()
+	defer ts.Unlock()
+	for key, t := range ts.tails {
+		if key == name {
 			return t
 		}
 	}
@@ -69,23 +80,19 @@ type Tail struct {
 	file       *os.File
 	reader     *bufio.Reader
 	isFollowed bool
-	Modify     chan struct{}
+	modify     chan struct{}
 }
 
 func NewTail(f *os.File) *Tail {
 	return &Tail{
 		file:   f,
 		reader: bufio.NewReader(f),
-		Modify: make(chan struct{}),
+		modify: make(chan struct{}),
 	}
 }
 
 func (t *Tail) SeekToEnd() {
 	t.file.Seek(0, io.SeekEnd)
-}
-
-func (t *Tail) Close() {
-	t.file.Close()
 }
 
 func (t *Tail) readLine() (*Line, error) {
@@ -108,10 +115,7 @@ func (t *Tail) sendLine(line *Line) {
 }
 
 func (t *Tail) Tail() {
-	defer func() {
-		t.Close()
-		fmt.Println("close tail")
-	}()
+	defer t.file.Close()
 
 	for {
 		line, err := t.readLine()
@@ -122,7 +126,7 @@ func (t *Tail) Tail() {
 			t.isFollowed = true
 
 			next := false
-			for _ = range t.Modify {
+			for _ = range t.modify {
 				next = true
 				break
 			}

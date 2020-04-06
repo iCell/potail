@@ -22,7 +22,7 @@ func run() {
 		watcher = w
 	})
 
-	tails := &Tails{}
+	tails := NewTails()
 	for _, file := range watcher.files {
 		if file.IsWatched == false {
 			continue
