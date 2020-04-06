@@ -39,7 +39,23 @@ func (ts *Tails) Add(path string) (*Tail, error) {
 	return tail, nil
 }
 
-func (ts *Tails) DestTail(name string) *Tail {
+func (ts *Tails) NotifyTail(name string) {
+	destTail := ts.destTail(name)
+	if destTail == nil {
+		return
+	}
+	destTail.Modify <- struct{}{}
+}
+
+func (ts *Tails) CloseTail(name string) {
+	destTail := ts.destTail(name)
+	if destTail == nil {
+		return
+	}
+	close(destTail.Modify)
+}
+
+func (ts *Tails) destTail(name string) *Tail {
 	for _, t := range ts.tails {
 		if filepath.Base(t.file.Name()) == name {
 			return t

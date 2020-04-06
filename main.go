@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"path/filepath"
 	"sync"
@@ -41,24 +40,17 @@ func run() {
 			case e := <-watcher.Event:
 				switch e.Op {
 				case Create:
-					fmt.Println("create", e.File)
 					t, err := tails.Add(filepath.Join(watcher.Dir, e.File))
 					if err != nil {
 						panic(err)
 					}
 					go t.Tail()
 				case Modify:
-					fmt.Println("modify", e.File)
-					destTail := tails.DestTail(e.File)
-					if destTail != nil {
-						destTail.Modify <- struct{}{}
-					}
-				case Chmod:
-					fmt.Println("change mod", e.File)
+					tails.NotifyTail(e.File)
 				case Rename:
-					fmt.Println("rename", e.File)
+					fallthrough
 				case Remove:
-					fmt.Println("remove", e.File)
+					tails.CloseTail(e.File)
 				}
 			case err := <-watcher.Error:
 				panic(err)
