@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,66 +12,12 @@ import (
 const newLine = '\n'
 
 type Line struct {
-	Text string
+	Text     string
+	FileName string
 }
 
 func (line *Line) IsEmpty() bool {
 	return len(line.Text) == 0
-}
-
-type Tails struct {
-	sync.Mutex
-	tails map[string]*Tail
-}
-
-func NewTails() *Tails {
-	return &Tails{
-		tails: make(map[string]*Tail),
-	}
-}
-
-func (ts *Tails) Add(path string) (*Tail, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-
-	tail := NewTail(f)
-	ts.Lock()
-	ts.tails[filepath.Base(f.Name())] = tail
-	ts.Unlock()
-
-	return tail, nil
-}
-
-func (ts *Tails) NotifyTail(name string) {
-	destTail := ts.destTail(name)
-	if destTail == nil {
-		return
-	}
-	destTail.modify <- struct{}{}
-}
-
-func (ts *Tails) CloseTail(name string) {
-	destTail := ts.destTail(name)
-	if destTail == nil {
-		return
-	}
-	close(destTail.modify)
-	ts.Lock()
-	delete(ts.tails, filepath.Base(destTail.file.Name()))
-	ts.Unlock()
-}
-
-func (ts *Tails) destTail(name string) *Tail {
-	ts.Lock()
-	defer ts.Unlock()
-	for key, t := range ts.tails {
-		if key == name {
-			return t
-		}
-	}
-	return nil
 }
 
 type Tail struct {
@@ -81,13 +26,15 @@ type Tail struct {
 	reader     *bufio.Reader
 	isFollowed bool
 	modify     chan struct{}
+	newline    chan Line
 }
 
-func NewTail(f *os.File) *Tail {
+func NewTail(f *os.File, l chan Line) *Tail {
 	return &Tail{
-		file:   f,
-		reader: bufio.NewReader(f),
-		modify: make(chan struct{}),
+		file:    f,
+		reader:  bufio.NewReader(f),
+		modify:  make(chan struct{}),
+		newline: l,
 	}
 }
 
@@ -104,14 +51,14 @@ func (t *Tail) readLine() (*Line, error) {
 		return &Line{Text: line}, err
 	}
 	line = strings.TrimRight(line, string(newLine))
-	return &Line{Text: line}, nil
+	return &Line{Text: line, FileName: filepath.Base(t.file.Name())}, nil
 }
 
 func (t *Tail) sendLine(line *Line) {
 	if line.IsEmpty() {
 		return
 	}
-	fmt.Println(line.Text)
+	t.newline <- *line
 }
 
 func (t *Tail) Tail() {

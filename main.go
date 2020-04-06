@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"sync"
 )
@@ -9,13 +12,15 @@ import (
 var watcher *Watcher
 var once sync.Once
 
-func main() {
-	run()
+type KLog struct {
+	Log    string `json:"log"`
+	Time   string `json:"time"`
+	Stream string `json:"stream"`
 }
 
-func run() {
+func main() {
 	once.Do(func() {
-		w, err := NewWatcher(".", "test*")
+		w, err := NewWatcher(os.Getenv("DIR_PATH"), "GLOB_PATTERN")
 		if err != nil {
 			log.Fatal("create watcher failed", err)
 		}
@@ -53,7 +58,20 @@ func run() {
 					tails.CloseTail(e.File)
 				}
 			case err := <-watcher.Error:
-				panic(err)
+				log.Fatalln("receive watcher error", err)
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case line := <-tails.Newline:
+				var log KLog
+				json.Unmarshal([]byte(line.Text), &log)
+				if log.Stream == "stderr" {
+					fmt.Println(log.Log, line.FileName)
+				}
 			}
 		}
 	}()
