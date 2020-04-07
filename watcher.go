@@ -56,6 +56,7 @@ func NewWatcher(dir, pattern string) (*Watcher, error) {
 
 	fis := make(map[string]fileInfo)
 	for _, info := range infos {
+		log.Println("file name,", info.Name(), "match", g.Match(info.Name()))
 		fis[info.Name()] = fileInfo{
 			Info:      info,
 			IsWatched: g.Match(info.Name()),
