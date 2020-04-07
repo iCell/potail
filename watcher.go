@@ -4,6 +4,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/gobwas/glob"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -70,6 +71,7 @@ func NewWatcher(dir, pattern string) (*Watcher, error) {
 		if fi.Info.IsDir() || fi.IsWatched == false {
 			continue
 		}
+		log.Println("watch file", fi.Info.Name())
 		notify.Add(filepath.Join(dir, fi.Info.Name()))
 	}
 

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -45,16 +43,20 @@ func main() {
 			case e := <-watcher.Event:
 				switch e.Op {
 				case Create:
+					log.Println("create", e.File)
 					t, err := tails.Add(filepath.Join(watcher.Dir, e.File))
 					if err != nil {
 						panic(err)
 					}
 					go t.Tail()
 				case Modify:
+					log.Println("modify", e.File)
 					tails.NotifyTail(e.File)
 				case Rename:
-					fallthrough
+					log.Println("rename", e.File)
+					tails.CloseTail(e.File)
 				case Remove:
+					log.Println("remove", e.File)
 					tails.CloseTail(e.File)
 				}
 			case err := <-watcher.Error:
@@ -67,11 +69,12 @@ func main() {
 		for {
 			select {
 			case line := <-tails.Newline:
-				var log KLog
-				json.Unmarshal([]byte(line.Text), &log)
-				if log.Stream == os.Getenv("LOG_STREAM") {
-					fmt.Println(log.Log, line.FileName)
-				}
+				log.Println(line.Text)
+				//var log KLog
+				//json.Unmarshal([]byte(line.Text), &log)
+				//if log.Stream == os.Getenv("LOG_STREAM") {
+				//	fmt.Println(log.Log, line.FileName)
+				//}
 			}
 		}
 	}()
