@@ -69,7 +69,7 @@ func main() {
 			case line := <-tails.Newline:
 				var log KLog
 				json.Unmarshal([]byte(line.Text), &log)
-				if log.Stream == "stderr" {
+				if log.Stream == os.Getenv("LOG_STREAM") {
 					fmt.Println(log.Log, line.FileName)
 				}
 			}
