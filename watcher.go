@@ -4,6 +4,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/gobwas/glob"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -55,6 +56,7 @@ func NewWatcher(dir, pattern string) (*Watcher, error) {
 
 	fis := make(map[string]fileInfo)
 	for _, info := range infos {
+		log.Println("file name,", info.Name(), "match", g.Match(info.Name()))
 		fis[info.Name()] = fileInfo{
 			Info:      info,
 			IsWatched: g.Match(info.Name()),
@@ -70,6 +72,7 @@ func NewWatcher(dir, pattern string) (*Watcher, error) {
 		if fi.Info.IsDir() || fi.IsWatched == false {
 			continue
 		}
+		log.Println("watch file", fi.Info.Name())
 		notify.Add(filepath.Join(dir, fi.Info.Name()))
 	}
 
