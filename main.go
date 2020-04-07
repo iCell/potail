@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 var watcher *Watcher
@@ -71,6 +74,18 @@ func main() {
 				json.Unmarshal([]byte(line.Text), &log)
 				if log.Stream == os.Getenv("LOG_STREAM") {
 					fmt.Println(log.Log, line.FileName)
+					msg := map[string]string{
+						"text": fmt.Sprintf(
+							"*log file*: %s\n*log*: %s\n*time*: %s",
+							line.FileName, log.Log, log.Time,
+						),
+					}
+					jsonStr, _ := json.Marshal(msg)
+					req, _ := http.NewRequest("POST", os.Getenv("SLACK_WEBHOOK"), bytes.NewBuffer(jsonStr))
+					req.Header.Set("Content-Type", "application/json")
+
+					client := &http.Client{Timeout: time.Second * 5}
+					client.Do(req)
 				}
 			}
 		}
